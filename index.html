@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simulator Neuroevolusi Interaktif Rainbow</title>
+    <style>
+        /* Mengatur dasar halaman agar pas di layar HP & PC tanpa scroll */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0b0b16;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            touch-action: none; /* Mencegah gertakan scroll bawaan HP */
+        }
+
+        h1 {
+            margin: 5px 0;
+            font-size: 1.6rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff);
+            background-size: 400% 400%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: rainbow-text 8s linear infinite;
+            text-align: center;
+        }
+
+        /* Panel Misi Utama */
+        #mission-panel {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+            padding: 6px 20px;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+            text-shadow: 0 0 10px #fff;
+            animation: pulse 1.5s infinite alternate;
+        }
+
+        /* Panel Informasi */
+        #info-panel {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 15px;
+            border-radius: 12px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 10px;
+            display: flex;
+            gap: 15px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        /* Wadah Canvas dengan Border Pelangi */
+        .canvas-container {
+            position: relative;
+            padding: 4px;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff);
+            background-size: 400% 400%;
+            animation: rainbow-border 6s linear infinite;
+            width: 90%;
+            max-width: 800px;
+        }
+
+        canvas {
+            background-color: #121224;
+            display: block;
+            border-radius: 6px;
+            width: 100%; /* Membuat canvas responsif mengikuti wadah */
+            height: auto;
+            cursor: crosshair;
+        }
+
+        .footer {
+            margin-top: 8px;
+            font-size: 0.75rem;
+            color: #aaa;
+            text-align: center;
+            max-width: 90%;
+            line-height: 1.3;
+        }
+
+        /* Animasi Keyframes */
+        @keyframes rainbow-text {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes rainbow-border {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.03); }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Interactive Neuroevolution</h1>
+
+    <div id="mission-panel">
+        PERINTAH: Tabrak Angka <span id="target-mission" style="color: #ff3333;">-</span> !
+    </div>
+
+    <div id="info-panel">
+        <div>Gen AI: <span id="gen-count" style="color: #00ff00;">1</span></div>
+        <div>AI Hidup: <span id="alive-count" style="color: #00ffff;">0</span></div>
+        <div>Skor AI: <span id="best-score" style="color: #ff00ff;">0</span></div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="simCanvas" width="800" height="500"></canvas>
+    </div>
+
+    <div class="footer">
+        <strong>Kontrol:</strong> Geser layar HP kamu atau gunakan mouse di PC untuk menggerakkan 🪐<strong>Bola Putih Bersinar</strong> menuju target angka!
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const genCountEl = document.getElementById('gen-count');
+        const aliveCountEl = document.getElementById('alive-count');
+        const bestScoreEl = document.getElementById('best-score');
+        const targetMissionEl = document.getElementById('target-mission');
+
+        // Konfigurasi Simulator
+        const POPULATION_SIZE = 40;
+        const LIFESPAN = 400; 
+        const MUTATION_RATE = 0.15;
+
+        let population = [];
+        let generation = 1;
+        let lifetime = 0;
+        let globalBestScore = 0;
+        let rainbowHue = 0;
+
+        // Titik koordinat tujuan bola manual
+        let mouse = { x: canvas.width / 2, y: canvas.height - 100 };
+
+        // Struktur Data Angka 1-5
+        const targets = [];
+        const numTargets = 5;
+        for (let i = 0; i < numTargets; i++) {
+            targets.push({
+                id: i + 1,
+                x: (canvas.width / (numTargets + 1)) * (i + 1),
+                y: 100,
+                radius: 24
+            });
+        }
+
+        let activeTargetId = 1;
+
+        function randomizeMission() {
+            const oldId = activeTargetId;
+            while (activeTargetId === oldId) {
+                activeTargetId = Math.floor(Math.random() * numTargets) + 1;
+            }
+            targetMissionEl.innerText = activeTargetId;
+            targetMissionEl.style.color = `hsl(${Math.random() * 360}, 100%, 60%)`;
+        }
+
+        // --- PENGATURAN INPUT (MOUSE + TOUCHSCREEN HANDPHONE) ---
+        
+        // Fungsi pembantu untuk konversi koordinat layar asli ke koordinat resolusi canvas (800x500)
+        function getCanvasCoordinates(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            // Menghitung rasio skala karena canvas mengecil di layar HP
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        // 1. Input Mouse (PC / Laptop)
+        canvas.addEventListener('mousemove', (event) => {
+            const coords = getCanvasCoordinates(event.clientX, event.clientY);
+            mouse.x = coords.x;
+            mouse.y = coords.y;
+        });
+
+        // 2. Input Sentuhan Sentuh & Seret (Handphone)
+        canvas.addEventListener('touchmove', (event) => {
+            event.preventDefault(); // Mencegah halaman goyang/scroll saat main
+            const touch = event.touches[0];
+            const coords = getCanvasCoordinates(touch.clientX, touch.clientY);
+            mouse.x = coords.x;
+            mouse.y = coords.y;
+        }, { passive: false });
+
+        canvas.addEventListener('touchstart', (event) => {
+            const touch = event.touches[0];
+            const coords = getCanvasCoordinates(touch.clientX, touch.clientY);
+            mouse.x = coords.x;
+            mouse.y = coords.y;
+        }, { passive: true });
+
+
+        // --- BOLA MANUAL (BRAINWARE) ---
+        class PlayerBall {
+            constructor() {
+                this.x = canvas.width / 2;
+                this.y = canvas.height - 100;
+                this.radius = 15;
+                this.speed = 0.2; // Kecepatan respons bola mengikuti jari
+            }
+
+            update() {
+                this.x += (mouse.x - this.x) * this.speed;
+                this.y += (mouse.y - this.y) * this.speed;
+
+                // Cek tabrakan dengan angka misi aktif
+                let activeTarget = targets.find(t => t.id === activeTargetId);
+                let dist = Math.hypot(activeTarget.x - this.x, activeTarget.y - this.y);
+                
+                if (dist < this.radius + activeTarget.radius) {
+                    randomizeMission();
+                    resetAiGeneration();
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = "#ffffff";
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = "#ffffff";
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius + 6, 0, Math.PI * 2);
+                ctx.strokeStyle = `hsl(${rainbowHue}, 100%, 50%)`;
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+            }
+        }
+
+        const player = new PlayerBall();
+
+        // --- KELAS JARINGAN SARAF TIRUAN (AI) ---
+        class NeuralNetwork {
+            constructor(weights = null) {
+                if (weights) {
+                    this.weights = [...weights];
+                } else {
+                    this.weights = [
+                        [Math.random() * 2 - 1, Math.random() * 2 - 1], 
+                        [Math.random() * 2 - 1, Math.random() * 2 - 1]  
+                    ];
+                }
+            }
+
+            predict(inputX, inputY) {
+                let outX = inputX * this.weights[0][0] + inputY * this.weights[0][1];
+                let outY = inputX * this.weights[1][0] + inputY * this.weights[1][1];
+                return [Math.tanh(outX) * 5, Math.tanh(outY) * 5];
+            }
+
+            mutate() {
+                for (let i = 0; i < this.weights.length; i++) {
+                    for (let j = 0; j < this.weights[i].length; j++) {
+                        if (Math.random() < MUTATION_RATE) {
+                            this.weights[i][j] += (Math.random() * 2 - 1) * 0.25;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- KELAS AGEN AI ---
+        class Agent {
+            constructor(brain = null) {
+                this.x = canvas.width / 2;
+                this.y = canvas.height - 40;
+                this.radius = 7;
+                this.brain = brain || new NeuralNetwork();
+                this.fitness = 0;
+                this.isDead = false;
+                this.color = `hsl(${Math.random() * 360}, 100%, 65%)`;
+            }
+
+            update() {
+                if (this.isDead) return;
+
+                let activeTarget = targets.find(t => t.id === activeTargetId);
+                let dx = activeTarget.x - this.x;
+                let dy = activeTarget.y - this.y;
+
+                let [vx, vy] = this.brain.predict(dx / canvas.width, dy / canvas.height);
+
+                this.x += vx;
+                this.y += vy;
+
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) {
+                    this.isDead = true;
+                }
+
+                let distToTarget = Math.hypot(activeTarget.x - this.x, activeTarget.y - this.y);
+                if (distToTarget < activeTarget.radius) {
+                    this.isDead = true;
+                    this.fitness += 2; 
+                }
+            }
+
+            draw() {
+                if (this.isDead) return;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = this.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            calculateFitness() {
+                let activeTarget = targets.find(t => t.id === activeTargetId);
+                let dist = Math.hypot(activeTarget.x - this.x, activeTarget.y - this.y);
+                this.fitness += 1 / (dist + 1);
+            }
+        }
+
+        // --- LOGIKA EVOLUSI ---
+        function initPopulation() {
+            population = [];
+            for (let i = 0; i < POPULATION_SIZE; i++) {
+                population.push(new Agent());
+            }
+        }
+
+        function resetAiGeneration() {
+            population.forEach(agent => {
+                agent.x = canvas.width / 2;
+                agent.y = canvas.height - 40;
+                agent.isDead = false;
+            });
+            lifetime = 0;
+        }
+
+        function evolve() {
+            population.forEach(agent => agent.calculateFitness());
+            population.sort((a, b) => b.fitness - a.fitness);
+            
+            let bestAgent = population[0];
+            let currentBestScore = Math.floor(bestAgent.fitness * 1000);
+            if (currentBestScore > globalBestScore) {
+                globalBestScore = currentBestScore;
+                bestScoreEl.innerText = globalBestScore;
+            }
+
+            let nextGeneration = [];
+            nextGeneration.push(new Agent(new NeuralNetwork(bestAgent.brain.weights)));
+
+            for (let i = 1; i < POPULATION_SIZE; i++) {
+                let childBrain = new NeuralNetwork(bestAgent.brain.weights);
+                childBrain.mutate();
+                nextGeneration.push(new Agent(childBrain));
+            }
+
+            population = nextGeneration;
+            generation++;
+            lifetime = 0;
+            genCountEl.innerText = generation;
+        }
+
+        // --- LOOP ANIMASI UTAMA ---
+        function loop() {
+            ctx.fillStyle = 'rgba(18, 18, 36, 0.25)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            rainbowHue = (rainbowHue + 1) % 360;
+
+            // 1. Menggambar Angka Target 1 - 5
+            targets.forEach(target => {
+                const isActive = (target.id === activeTargetId);
+                
+                ctx.beginPath();
+                ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
+                
+                if (isActive) {
+                    ctx.fillStyle = `hsl(${rainbowHue}, 100%, 50%)`;
+                    ctx.shadowBlur = 25;
+                    ctx.shadowColor = `hsl(${rainbowHue}, 100%, 50%)`;
+                } else {
+                    ctx.fillStyle = '#1e1e38';
+                    ctx.shadowBlur = 0;
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.strokeStyle = isActive ? '#fff' : '#444488';
+                ctx.lineWidth = isActive ? 3 : 1;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(target.id, target.x, target.y);
+            });
+
+            // 2. Update dan Gambar Bola Manual
+            player.update();
+            player.draw();
+
+            // 3. Update dan Gambar Populasi AI
+            let aliveCount = 0;
+            population.forEach(agent => {
+                agent.update();
+                agent.draw();
+                if (!agent.isDead) aliveCount++;
+            });
+
+            aliveCountEl.innerText = aliveCount;
+            lifetime++;
+
+            if (lifetime >= LIFESPAN || aliveCount === 0) {
+                evolve();
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        // Jalankan sistem
+        randomizeMission();
+        initPopulation();
+        loop();
+    </script>
+</body>
+</html>
